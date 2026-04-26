@@ -1,0 +1,122 @@
+clear all;
+close all;
+
+%% Define Constants & Variables
+miu = 800; %Structural density
+c = 2; %Chord
+b = c/2; %Half chord
+x_f = 0.45*c; %Distance from LE to EA
+a = -0.05*c; %Distance from flexural axis to mass centre
+t = 0.01; %Thickness
+l = 3; %Length
+om_h = 2*2*pi; %Plunge natural frequency
+om_a = 6*2*pi; %Pitch natural frequency
+m = miu*c*t; %Mass per unit length
+I_a = (1/12)*m*(c^2) + m*(a^2); %Second moment of area
+S = -m*a;
+K_h = m*(om_h^2); %Plunge stiffness
+K_a = I_a*(om_a^2); %Pitch stiffness
+rho = 1.225; %Air density
+
+%% Initialise empty Freq (V) and Damping (d) matrices
+V1 = [];
+V2 = [];
+d1 = [];
+d2 = [];
+Plunge_root_re = [];
+Plunge_root_im = [];
+Pitch_root_re = [];
+Pitch_root_im = [];
+U1 =[];
+U2 = [];
+flutter_count = 1;
+
+%% Main Code
+for U = 0.5:0.1:100
+    i = 1;
+    for om = [sqrt(K_h/m) sqrt(K_a/I_a)]
+        error = 10;        
+        while error > 0.1
+              k = om*b/U;
+              C_k = 1 - (0.165/(1-(0.0455/k)*1i)) - (0.335/(1-(0.3/k)*1i));
+              M = [m S; S I_a];
+              K = [K_h 0; 0 K_a];
+              D = -rho*pi*(b^2)*[1 -a; -a (a^2)+((b^2)/8)];
+              E = rho*pi*b*U*[-2*C_k 2*C_k*(a-(b/2))-b; ((2*a)+b)*C_k (b-((2*a)+b)*C_k)*(a-(b/2))-b*(c/4)];
+              F = rho*pi*b*(U^2)*[0 -2*C_k; 0 ((2*a)+b)*C_k];
+              A = [zeros(2) eye(2); (inv(M-D))*(F-K) (inv(M-D))*E];
+              d = eig(A);
+              [~,index] = sort(imag(d),'descend');
+              d = d(index);        
+              if i == 1; 
+                 om_new = abs(d(2));
+                 error = abs(om_new - om)/om*100;
+                 om = om_new;
+                 damp = -real(d(2))/abs(d(2));
+              else
+                 om_new = abs(d(1));
+                 error = abs(om_new - om)/om*100;
+                 om = om_new;
+                 damp = -real(d(1))/abs(d(1));
+              end 
+        end
+        if i == 1;           
+           V1 = [V1; om];
+           d1 = [d1; damp];
+           U1 = [U1; U];
+           Plunge_root_re = [Plunge_root_re; real(d(2))];
+           Plunge_root_im = [Plunge_root_im; imag(d(2))];
+        else           
+           V2 = [V2; om]; 
+           d2 = [d2; damp];
+           U2 = [U2; U]; 
+           Pitch_root_re = [Pitch_root_re; real(d(1))];
+           Pitch_root_im = [Pitch_root_im; imag(d(1))];
+        end
+        if (damp < 0 || damp == 0) && flutter_count == 1;  
+           fprintf('Flutter Airspeed, U_F = %.2f m/s\n',U);
+           flutter = U;
+           flutter_count = 2;
+        end
+        i = i + 1;
+    end
+end
+
+%%Plot the graphs
+% Freq and Damping Plots
+tiledlayout(2,2)
+nexttile
+hold on
+title('Freq vs Airspeed')
+plot(U1, V1, 'r')
+plot(U2, V2, 'b')
+xlabel({'Airspeed, U_\infty (m/s)'}, 'FontSize', 8);
+ylabel({'Natural Frequency, \omega_n (rad/s)'}, 'FontSize', 8);
+str = ['U_f = ', num2str(flutter), 'm/s'];
+xline(flutter, '--', str)
+legend('Plunge', 'Pitch');
+hold off
+nexttile
+hold on
+title('Damping vs Airspeed')
+plot(U1, d1, 'r')
+plot(U2, d2, 'b')
+xlabel({'Airspeed, U_\infty (m/s)'}, 'FontSize', 8);
+ylabel({'Damping, \zeta'}, 'FontSize', 8);
+str = ['U_f = ', num2str(flutter), 'm/s'];
+xline(flutter, '--', str)
+yline(0, '--', 'y=0')
+legend('Plunge', 'Pitch');
+hold off
+
+% Root Locus Plot
+nexttile([1 2])
+hold on
+title('Root Locus Plot')
+plot(Plunge_root_re, Plunge_root_im, 'r')
+plot(Pitch_root_re, Pitch_root_im, 'b')
+xlabel({'Re'}, 'FontSize', 8);
+ylabel({'Im'}, 'FontSize', 8);
+xline(0, '--', 'Real axis')
+legend('Plunge', 'Pitch');
+hold off
